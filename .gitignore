@@ -1,0 +1,11 @@
+# 忽略上级或同级的不相关项目文件夹
+/C/
+/Web/
+/verilog/
+../
+
+# 建议同时也忽略这些 Python 垃圾文件
+__pycache__/
+*.pyc
+.vscode/
+.idea/
