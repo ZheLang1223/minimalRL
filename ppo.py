@@ -1,4 +1,4 @@
-import gym
+import gymnasium as gym
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -6,33 +6,44 @@ import torch.optim as optim
 from torch.distributions import Categorical
 
 #Hyperparameters
-learning_rate = 0.0005
-gamma         = 0.98
-lmbda         = 0.95
-eps_clip      = 0.1
-K_epoch       = 3
-T_horizon     = 20
+learning_rate = 0.0005  # 学习率，随机梯度下降步长的大小
+gamma         = 0.98    # 折扣因子，体现算法对未来奖励的重视程度，越接近1算法就越有远见
+lmbda         = 0.95    # GAE参数，控制偏差-方差权衡
+eps_clip      = 0.1     # 截断限度
+K_epoch       = 3       # 迭代次数
+T_horizon     = 20      # 截断长度
 
 class PPO(nn.Module):
+    
     def __init__(self):
+        '''
+        PPO网络结构
+        '''
         super(PPO, self).__init__()
         self.data = []
-        
         self.fc1   = nn.Linear(4,256)
         self.fc_pi = nn.Linear(256,2)
         self.fc_v  = nn.Linear(256,1)
         self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
 
     def pi(self, x, softmax_dim = 0):
-        x = F.relu(self.fc1(x))
-        x = self.fc_pi(x)
-        prob = F.softmax(x, dim=softmax_dim)
-        return prob
+        '''
+        Actor：决定采取什么动作
+        策略函数，计算动作的概率分布
+        '''
+        x = F.relu(self.fc1(x)) # 输入状态x通过全连接层fc1提取特征，使用ReLU激活函数引入非线性
+        x = self.fc_pi(x)   # 通过策略层fc_pi得到logits
+        prob = F.softmax(x, dim=softmax_dim)    # 将logits转换为概率分布
+        return prob # 返回每个动作的概率值
     
     def v(self, x):
+        '''
+        Critic：评估当前状态有多好
+        价值函数，估计当前状态的价值
+        '''
         x = F.relu(self.fc1(x))
         v = self.fc_v(x)
-        return v
+        return v    # 返回标量价值值
       
     def put_data(self, transition):
         self.data.append(transition)
@@ -57,14 +68,21 @@ class PPO(nn.Module):
         return s, a, r, s_prime, done_mask, prob_a
         
     def train_net(self):
+        '''
+        
+        '''
         s, a, r, s_prime, done_mask, prob_a = self.make_batch()
 
         for i in range(K_epoch):
+            # 随机梯度下降更新参数的公式
             td_target = r + gamma * self.v(s_prime) * done_mask
             delta = td_target - self.v(s)
             delta = delta.detach().numpy()
 
             advantage_lst = []
+            # >0 表示当前动作比平均水平好
+            # <0 表示当前动作比平均水平差
+            # =0 表示当前动作和平均水平一样
             advantage = 0.0
             for delta_t in delta[::-1]:
                 advantage = gamma * lmbda * advantage + delta_t[0]
@@ -74,6 +92,7 @@ class PPO(nn.Module):
 
             pi = self.pi(s, softmax_dim=1)
             pi_a = pi.gather(1,a)
+            # 分子pi_a/分母prob_a：当前动作概率/旧动作概率
             ratio = torch.exp(torch.log(pi_a) - torch.log(prob_a))  # a/b == exp(log(a)-log(b))
 
             surr1 = ratio * advantage
